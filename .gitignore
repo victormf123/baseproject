@@ -31,7 +31,3 @@ build/
 
 ### VS Code ###
 .vscode/
-mcp.json
-mcp.example.json
-.env
-.env.example
