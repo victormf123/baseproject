@@ -1,6 +1,7 @@
 package coffe.baseproject.controllers.docs;
 
 import coffe.baseproject.data.dto.security.AccountCredentialsDTO;
+import coffe.baseproject.data.dto.security.UserRegistrationResponseDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -47,5 +48,5 @@ public interface AuthControllerDocs {
                     @ApiResponse(description = "Internal Server Error", responseCode = "500", content = @Content)
             }
     )
-    AccountCredentialsDTO create(AccountCredentialsDTO credentials);
+    UserRegistrationResponseDTO create(AccountCredentialsDTO credentials);
 }

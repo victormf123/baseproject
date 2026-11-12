@@ -23,11 +23,11 @@ class UserServiceTest {
     private UserService userService;
 
     @Test
-    void loadUserByUsername_shouldReturnUserWhenExists() {
+    void loadUserByUsername_shouldReturnUserWhenUsernameExists() {
         User user = new User();
         user.setUsername("john");
 
-        when(repository.findByUsername("john")).thenReturn(user);
+        when(repository.findByUsernameOrEmail("john")).thenReturn(user);
 
         UserDetails result = userService.loadUserByUsername("john");
 
@@ -36,8 +36,22 @@ class UserServiceTest {
     }
 
     @Test
+    void loadUserByUsername_shouldReturnUserWhenEmailExists() {
+        User user = new User();
+        user.setUsername("john");
+        user.setEmail("john@email.com");
+
+        when(repository.findByUsernameOrEmail("john@email.com")).thenReturn(user);
+
+        UserDetails result = userService.loadUserByUsername("john@email.com");
+
+        assertNotNull(result);
+        assertEquals("john", result.getUsername());
+    }
+
+    @Test
     void loadUserByUsername_shouldThrowWhenUserDoesNotExist() {
-        when(repository.findByUsername("missing-user")).thenReturn(null);
+        when(repository.findByUsernameOrEmail("missing-user")).thenReturn(null);
 
         UsernameNotFoundException exception = assertThrows(
                 UsernameNotFoundException.class,

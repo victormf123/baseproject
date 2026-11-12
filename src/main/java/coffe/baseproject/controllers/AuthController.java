@@ -3,7 +3,7 @@ package coffe.baseproject.controllers;
 
 import coffe.baseproject.controllers.docs.AuthControllerDocs;
 import coffe.baseproject.data.dto.security.AccountCredentialsDTO;
-import coffe.baseproject.data.dto.security.TokenDTO;
+import coffe.baseproject.data.dto.security.UserRegistrationResponseDTO;
 import coffe.baseproject.services.AuthService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.apache.commons.lang3.StringUtils;
@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Authentication Endpoint!")
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("/api/auth")
 public class AuthController implements AuthControllerDocs {
 
     @Autowired
@@ -53,7 +53,7 @@ public class AuthController implements AuthControllerDocs {
                     MediaType.APPLICATION_YAML_VALUE}
     )
     @Override
-    public AccountCredentialsDTO create(@RequestBody AccountCredentialsDTO credentials) {
+    public UserRegistrationResponseDTO create(@RequestBody AccountCredentialsDTO credentials) {
         return service.create(credentials);
     }
 
@@ -64,7 +64,6 @@ public class AuthController implements AuthControllerDocs {
     private static boolean credentialsIsInvalid(AccountCredentialsDTO credentials) {
         return credentials == null ||
                 StringUtils.isBlank(credentials.getPassword()) ||
-                StringUtils.isBlank(credentials.getUsername());
+                (StringUtils.isBlank(credentials.getUsername()) && StringUtils.isBlank(credentials.getEmail()));
     }
 }
-

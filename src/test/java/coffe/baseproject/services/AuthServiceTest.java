@@ -2,8 +2,12 @@ package coffe.baseproject.services;
 
 import coffe.baseproject.data.dto.security.AccountCredentialsDTO;
 import coffe.baseproject.data.dto.security.TokenDTO;
+import coffe.baseproject.data.dto.security.UserRegistrationResponseDTO;
 import coffe.baseproject.exception.RequiredObjectIsNullException;
+import coffe.baseproject.exception.UserAlreadyExistsException;
+import coffe.baseproject.model.Permission;
 import coffe.baseproject.model.User;
+import coffe.baseproject.repository.PermissionRepository;
 import coffe.baseproject.repository.UserRepository;
 import coffe.baseproject.security.jwt.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,8 +23,10 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import java.util.ArrayList;
+import java.lang.reflect.Method;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,6 +44,9 @@ class AuthServiceTest {
     @Mock
     private UserRepository repository;
 
+    @Mock
+    private PermissionRepository permissionRepository;
+
     @InjectMocks
     private AuthService authService;
 
@@ -45,38 +54,62 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        credentials = new AccountCredentialsDTO("john", "123456", "John Doe");
+        credentials = new AccountCredentialsDTO("john", "123456", "john@email.com");
     }
 
     @Test
     void signIn_shouldAuthenticateAndReturnAccessToken() {
         User user = new User();
         user.setUsername("john");
+        user.setEmail("john@email.com");
         user.setPermissions(new ArrayList<>());
 
         TokenDTO token = new TokenDTO("john", true, new Date(), new Date(), "access-token", "refresh-token");
 
-        when(repository.findByUsername("john")).thenReturn(user);
+        when(repository.findByUsernameOrEmail("john")).thenReturn(user);
         when(tokenProvider.createAccessToken("john", List.of())).thenReturn(token);
 
         ResponseEntity<TokenDTO> response = authService.signIn(credentials);
 
         verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
-        verify(repository).findByUsername("john");
+        verify(repository).findByUsernameOrEmail("john");
+        verify(tokenProvider).createAccessToken("john", List.of());
+        assertEquals(ResponseEntity.ok(token), response);
+    }
+
+    @Test
+    void signIn_shouldAuthenticateWithEmail() {
+        User user = new User();
+        user.setUsername("john");
+        user.setEmail("john@email.com");
+        user.setPermissions(new ArrayList<>());
+
+        TokenDTO token = new TokenDTO("john", true, new Date(), new Date(), "access-token", "refresh-token");
+
+        credentials.setUsername(null);
+        credentials.setEmail("john@email.com");
+
+        when(repository.findByUsernameOrEmail("john@email.com")).thenReturn(user);
+        when(tokenProvider.createAccessToken("john", List.of())).thenReturn(token);
+
+        ResponseEntity<TokenDTO> response = authService.signIn(credentials);
+
+        verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+        verify(repository).findByUsernameOrEmail("john@email.com");
         verify(tokenProvider).createAccessToken("john", List.of());
         assertEquals(ResponseEntity.ok(token), response);
     }
 
     @Test
     void signIn_shouldThrowWhenUserDoesNotExist() {
-        when(repository.findByUsername("john")).thenReturn(null);
+        when(repository.findByUsernameOrEmail("john")).thenReturn(null);
 
         UsernameNotFoundException exception = assertThrows(
                 UsernameNotFoundException.class,
                 () -> authService.signIn(credentials)
         );
 
-        assertTrue(exception.getMessage().contains("Username john not found"));
+        assertTrue(exception.getMessage().contains("Username or email john not found"));
     }
 
     @Test
@@ -85,7 +118,7 @@ class AuthServiceTest {
         user.setUsername("john");
         TokenDTO token = new TokenDTO("john", true, new Date(), new Date(), "new-access", "new-refresh");
 
-        when(repository.findByUsername("john")).thenReturn(user);
+        when(repository.findByUsernameOrEmail("john")).thenReturn(user);
         when(tokenProvider.refreshToken("refresh-token")).thenReturn(token);
 
         ResponseEntity<TokenDTO> response = authService.refreshToken("john", "refresh-token");
@@ -96,42 +129,108 @@ class AuthServiceTest {
 
     @Test
     void refreshToken_shouldThrowWhenUserDoesNotExist() {
-        when(repository.findByUsername("invalid-user")).thenReturn(null);
+        when(repository.findByUsernameOrEmail("invalid-user")).thenReturn(null);
 
         UsernameNotFoundException exception = assertThrows(
                 UsernameNotFoundException.class,
                 () -> authService.refreshToken("invalid-user", "refresh-token")
         );
 
-        assertTrue(exception.getMessage().contains("Username invalid-user not found"));
+        assertTrue(exception.getMessage().contains("Username or email invalid-user not found"));
     }
 
     @Test
     void create_shouldPersistUserAndEncodePassword() {
+        Permission userPermission = new Permission();
+        userPermission.setId(1L);
+        userPermission.setDescription("usuario");
+
         User savedUser = new User();
-        savedUser.setFullname("John Doe");
+        savedUser.setId(1L);
         savedUser.setUsername("john");
+        savedUser.setEmail("john@email.com");
         savedUser.setPassword("{pbkdf2}encodedPassword");
 
+        when(permissionRepository.findFirstByDescription("usuario")).thenReturn(Optional.of(userPermission));
         when(repository.save(any(User.class))).thenReturn(savedUser);
 
-        AccountCredentialsDTO result = authService.create(credentials);
+        UserRegistrationResponseDTO result = authService.create(credentials);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(repository).save(userCaptor.capture());
 
         User capturedUser = userCaptor.getValue();
         assertEquals("john", capturedUser.getUsername());
-        assertEquals("John Doe", capturedUser.getFullname());
+        assertEquals("john@email.com", capturedUser.getEmail());
         assertNotNull(capturedUser.getPassword());
         assertNotEquals("123456", capturedUser.getPassword());
         assertTrue(capturedUser.getAccountNonExpired());
         assertTrue(capturedUser.getAccountNonLocked());
         assertTrue(capturedUser.getCredentialsNonExpired());
         assertTrue(capturedUser.getEnabled());
+        assertEquals(List.of(userPermission), capturedUser.getPermissions());
+        assertNotNull(capturedUser.getProfile());
+        assertNull(capturedUser.getProfile().getFullName());
+        assertNull(capturedUser.getProfile().getPhone());
+        assertNull(capturedUser.getProfile().getCpf());
+        assertNull(capturedUser.getProfile().getCnpj());
+        assertNull(capturedUser.getProfile().getAddress());
+        assertNull(capturedUser.getProfile().getZipCode());
+        assertNull(capturedUser.getProfile().getCompany());
+        assertSame(capturedUser, capturedUser.getProfile().getUser());
 
+        assertEquals(1L, result.getId());
         assertEquals("john", result.getUsername());
-        assertEquals("John Doe", result.getFullname());
+        assertEquals("john@email.com", result.getEmail());
+        assertFalse(resultJsonContainsPassword(result));
+    }
+
+    @Test
+    void create_shouldRejectExistingUsername() {
+        when(repository.existsByUsername("john")).thenReturn(true);
+
+        UserAlreadyExistsException exception = assertThrows(
+                UserAlreadyExistsException.class,
+                () -> authService.create(credentials)
+        );
+
+        assertEquals("Username is already registered", exception.getMessage());
+        verify(repository, never()).save(any(User.class));
+        verifyNoInteractions(permissionRepository);
+    }
+
+    @Test
+    void create_shouldRejectExistingEmail() {
+        when(repository.existsByEmail("john@email.com")).thenReturn(true);
+
+        UserAlreadyExistsException exception = assertThrows(
+                UserAlreadyExistsException.class,
+                () -> authService.create(credentials)
+        );
+
+        assertEquals("Email is already registered", exception.getMessage());
+        verify(repository, never()).save(any(User.class));
+        verifyNoInteractions(permissionRepository);
+    }
+
+    @Test
+    void create_shouldFailWhenDefaultUserPermissionDoesNotExist() {
+        when(permissionRepository.findFirstByDescription("usuario")).thenReturn(Optional.empty());
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> authService.create(credentials)
+        );
+
+        assertTrue(exception.getMessage().contains("permission 'usuario'"));
+        verify(repository, never()).save(any(User.class));
+    }
+
+    @Test
+    void create_shouldRunWithinTransaction() throws NoSuchMethodException {
+        Method createMethod = AuthService.class.getMethod("create", AccountCredentialsDTO.class);
+
+        assertTrue(createMethod.isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class));
     }
 
     @Test
@@ -142,5 +241,15 @@ class AuthServiceTest {
         );
 
         assertNotNull(exception);
+    }
+
+    private boolean resultJsonContainsPassword(UserRegistrationResponseDTO result) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .writeValueAsString(result)
+                    .contains("password");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new AssertionError("Could not serialize registration response", exception);
+        }
     }
 }
